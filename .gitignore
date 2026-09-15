@@ -4,3 +4,7 @@ __pycache__/
 .venv/
 venv/
 output/
+
+.vercel
+.env*.local
+.secrets_tmp/
