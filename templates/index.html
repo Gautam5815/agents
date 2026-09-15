@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LinkedIn Marketing Agent</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --border: #e1e4e8;
+    --text: #1c1e21;
+    --muted: #65676b;
+    --accent: #0a66c2;
+    --accent-hover: #084d92;
+    --danger: #d93025;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    background: var(--accent);
+    color: white;
+    padding: 20px 32px;
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; opacity: 0.9; font-size: 13px; }
+  main {
+    max-width: 720px;
+    margin: 32px auto;
+    padding: 0 16px 64px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .banner {
+    background: #fff8e1;
+    border: 1px solid #ffe08a;
+    color: #7a5b00;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+  label { font-weight: 600; font-size: 14px; display: block; margin-bottom: 6px; }
+  input[type=text], textarea {
+    width: 100%;
+    font-size: 14px;
+    font-family: inherit;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    resize: vertical;
+  }
+  textarea { min-height: 220px; line-height: 1.5; }
+  button {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 20px;
+    border: none;
+    cursor: pointer;
+    margin-top: 12px;
+  }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled { background: #9ec4e6; cursor: not-allowed; }
+  .btn-secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  img.preview {
+    max-width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin-top: 12px;
+  }
+  .muted { color: var(--muted); font-size: 13px; }
+  .status { font-size: 13px; margin-top: 10px; }
+  .status.error { color: var(--danger); }
+  .status.success { color: #1a7f37; }
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid #ccc;
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #preview-card { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LinkedIn Marketing Agent</h1>
+  <p>Give it a topic. It researches, drafts a post + image, and publishes to LinkedIn on your approval.</p>
+</header>
+<main>
+  {% if dry_run %}
+  <div class="banner">DRY_RUN is enabled — you can generate drafts, but publishing to LinkedIn is disabled until you unset it in <code>.env</code>.</div>
+  {% endif %}
+
+  <div class="card">
+    <label for="topic">Topic</label>
+    <input type="text" id="topic" placeholder="e.g. 5 employee engagement trends for 2026">
+    <button class="btn-primary" id="generate-btn" onclick="generate()">Generate draft</button>
+    <div id="generate-status" class="status"></div>
+  </div>
+
+  <div class="card" id="preview-card">
+    <label>Generated image</label>
+    <img id="preview-image" class="preview" src="" alt="Generated post image">
+
+    <label style="margin-top:20px;">Post text (editable)</label>
+    <textarea id="preview-post"></textarea>
+    <p class="muted" id="image-prompt-note"></p>
+
+    <button class="btn-primary" id="publish-btn" onclick="publish()">Publish to LinkedIn</button>
+    <button class="btn-secondary" onclick="generate()">Regenerate</button>
+    <div id="publish-status" class="status"></div>
+  </div>
+</main>
+
+<script>
+const DRY_RUN = {{ 'true' if dry_run else 'false' }};
+let currentImageB64 = null;
+
+function setStatus(el, text, cls) {
+  el.textContent = text;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+async function generate() {
+  const topic = document.getElementById('topic').value.trim();
+  if (!topic) { alert('Enter a topic first.'); return; }
+
+  const btn = document.getElementById('generate-btn');
+  const status = document.getElementById('generate-status');
+  btn.disabled = true;
+  setStatus(status, '', '');
+  status.innerHTML = '<span class="spinner"></span>Researching, writing, and generating image… this can take up to a minute.';
+  document.getElementById('preview-card').style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Generation failed.');
+
+    currentImageB64 = data.image_b64;
+    document.getElementById('preview-image').src = 'data:image/png;base64,' + data.image_b64;
+    document.getElementById('preview-post').value = data.post;
+    document.getElementById('image-prompt-note').textContent =
+      `Image prompt: ${data.image_prompt} (based on ${data.research_count} research result(s))`;
+    document.getElementById('preview-card').style.display = 'block';
+    setStatus(status, 'Draft ready. Review below before publishing.', 'success');
+  } catch (e) {
+    setStatus(status, e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function publish() {
+  if (!currentImageB64) return;
+  if (DRY_RUN) { alert('DRY_RUN is enabled — publishing is disabled.'); return; }
+  if (!confirm('This will publish a real, public post to your LinkedIn profile. Continue?')) return;
+
+  const btn = document.getElementById('publish-btn');
+  const status = document.getElementById('publish-status');
+  btn.disabled = true;
+  setStatus(status, '', '');
+  status.innerHTML = '<span class="spinner"></span>Publishing to LinkedIn…';
+
+  try {
+    const post = document.getElementById('preview-post').value;
+    const resp = await fetch('/api/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ post, image_b64: currentImageB64 })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Publish failed.');
+
+    setStatus(status, `Published! Post id: ${data.result.post_id}`, 'success');
+  } catch (e) {
+    setStatus(status, e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
