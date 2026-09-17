@@ -160,6 +160,38 @@ To test manually without waiting for the schedule:
 curl -X POST https://<your-deployment>/api/cron/daily-post -H "Authorization: Bearer <CRON_SECRET>"
 ```
 
+## Weekly newsletter draft (AI news, draft-only — never auto-published)
+
+LinkedIn has no API for publishing Newsletter editions (as opposed to regular feed
+posts) — there is no way to automate that final publish step without violating
+LinkedIn's terms via browser automation, which this project does not do. Instead,
+`/api/cron/weekly-newsletter` runs every Monday 8am UTC and:
+
+1. Searches for recent AI news via SerpApi.
+2. Has GPT select 3-5 genuinely useful developments and draft the newsletter
+   ([prompts/newsletter_prompt.md](prompts/newsletter_prompt.md)), citing a source URL
+   for each item.
+3. **Verifies** each cited source_url actually matches one of the real search results
+   (not just trusting the model) — items that don't match are marked "unverified" in the
+   UI so you can catch a hallucinated citation before publishing.
+4. Generates a header image.
+5. Commits the draft to the repo as `data/newsletter_latest.json` via the GitHub API —
+   this is how the draft survives between the cron job and a later page view, since
+   Vercel serverless functions don't share a filesystem across invocations; the commit
+   also triggers Vercel's normal auto-deploy, so the page picks up the new draft shortly
+   after.
+
+Visit `/newsletter` to review the latest draft, then **copy it and publish it on LinkedIn
+yourself** (profile → Write article) — nothing here ever auto-publishes a newsletter.
+
+**Setup**, in addition to the vars already needed for daily posting:
+- `GITHUB_TOKEN`: a GitHub personal access token with write access to this repo's
+  contents (fine-grained token scoped to just this repo, "Contents: Read and write" — or
+  a classic token with the `repo` scope).
+- `GITHUB_REPO` (defaults to `Gautam5815/agents`) and `GITHUB_BRANCH` (defaults to `main`)
+  if you fork this to a different repo.
+- The schedule lives in `vercel.json`'s `crons` field alongside the daily post job.
+
 ## Job search + application drafting agent
 
 `job_main.py` is a separate tool: it searches job listings via the [Jooble API](https://jooble.org/api/about)

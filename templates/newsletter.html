@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Newsletter Draft</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --border: #e1e4e8; --text: #1c1e21;
+    --muted: #65676b; --accent: #0a66c2; --accent-hover: #084d92;
+    --danger: #d93025; --ok: #1a7f37;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); }
+  header { background: var(--accent); color: white; padding: 20px 32px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; opacity: 0.9; font-size: 13px; }
+  header a { color: white; }
+  main { max-width: 760px; margin: 32px auto; padding: 0 16px 64px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 24px; margin-bottom: 20px; }
+  .banner { background: #e8f0fe; border: 1px solid #aecbfa; color: #174ea6; padding: 10px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 20px; }
+  img.header-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px; }
+  .meta { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  h2.title { margin: 0 0 8px; font-size: 22px; }
+  .intro { font-size: 15px; margin-bottom: 20px; }
+  .item { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 16px; }
+  .item h3 { margin: 0 0 6px; font-size: 16px; }
+  .item p { margin: 0 0 8px; font-size: 14px; line-height: 1.5; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+  .badge.verified { background: #e6f4ea; color: var(--ok); }
+  .badge.unverified { background: #fce8e6; color: var(--danger); }
+  .source-link { font-size: 13px; }
+  button { font-size: 14px; font-weight: 600; padding: 10px 18px; border-radius: 20px; border: none; cursor: pointer; background: var(--accent); color: white; }
+  button:hover { background: var(--accent-hover); }
+  .status { font-size: 13px; margin-top: 10px; color: var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Newsletter Draft</h1>
+  <p>Generated automatically every Monday. Review it here, then paste it into LinkedIn's Newsletter editor and publish it yourself — LinkedIn has no API for that step.</p>
+  <p style="margin-top:10px;"><a href="/">&larr; LinkedIn posting agent</a> &nbsp;|&nbsp; <a href="/jobs">Job search agent</a></p>
+</header>
+<main>
+  <div class="banner">
+    This page only prepares a draft — nothing is ever published automatically here.
+    Each item below shows whether its source was verified against real search results
+    (green) or not (red, meaning the model's citation didn't match — double-check it
+    before including that item).
+  </div>
+
+  {% if not draft %}
+  <div class="card empty">No newsletter draft yet. The first one generates on the next scheduled Monday run.</div>
+  {% else %}
+  <div class="card">
+    <div class="meta">Generated: {{ draft.generated_at }}</div>
+    {% if draft.image_b64 %}
+    <img class="header-img" src="data:image/png;base64,{{ draft.image_b64 }}" alt="Header image">
+    {% endif %}
+    <h2 class="title">{{ draft.title }}</h2>
+    <p class="intro">{{ draft.intro }}</p>
+
+    {% for item in draft.items %}
+    <div class="item">
+      <h3>{{ item.heading }}
+        {% if item.source_verified %}
+        <span class="badge verified">source verified</span>
+        {% else %}
+        <span class="badge unverified">unverified source</span>
+        {% endif %}
+      </h3>
+      <p>{{ item.body }}</p>
+      <a class="source-link" href="{{ item.source_url }}" target="_blank" rel="noopener">Source &rarr;</a>
+    </div>
+    {% endfor %}
+
+    <div style="margin-top:24px;">
+      <button onclick="copyDraft()">Copy for LinkedIn</button>
+      <div id="copy-status" class="status"></div>
+    </div>
+  </div>
+  {% endif %}
+</main>
+
+{% if draft %}
+<script>
+function copyDraft() {
+  const lines = [];
+  lines.push({{ draft.title|tojson }});
+  lines.push('');
+  lines.push({{ draft.intro|tojson }});
+  lines.push('');
+  const items = {{ draft.items|tojson }};
+  for (const item of items) {
+    lines.push(item.heading);
+    lines.push(item.body);
+    lines.push('Source: ' + item.source_url);
+    lines.push('');
+  }
+  const text = lines.join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    document.getElementById('copy-status').textContent = 'Copied — paste into LinkedIn\'s Newsletter editor (Write article, from your profile) and publish.';
+  });
+}
+</script>
+{% endif %}
+</body>
+</html>

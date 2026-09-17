@@ -1,11 +1,16 @@
 import base64
+import datetime
+import json
+import os
 
 from flask import Flask, jsonify, render_template, request
 
-from agent import config, content, daily_topic, image_gen, linkedin_client, research
+from agent import config, content, daily_topic, github_store, image_gen, linkedin_client, newsletter, research
 from jobsearch import contact_finder, email_alerts, email_writer, jooble_client
 
 app = Flask(__name__)
+
+_NEWSLETTER_DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "newsletter_latest.json")
 
 
 @app.route("/")
@@ -16,6 +21,15 @@ def index():
 @app.route("/jobs")
 def jobs_page():
     return render_template("jobs.html")
+
+
+@app.route("/newsletter")
+def newsletter_page():
+    draft = None
+    if os.path.exists(_NEWSLETTER_DATA_PATH):
+        with open(_NEWSLETTER_DATA_PATH, "r", encoding="utf-8") as f:
+            draft = json.load(f)
+    return render_template("newsletter.html", draft=draft)
 
 
 @app.route("/api/generate", methods=["POST"])
@@ -120,6 +134,40 @@ def api_cron_daily_post():
 
     print(log)
     return jsonify(log)
+
+
+@app.route("/api/cron/weekly-newsletter", methods=["GET", "POST"])
+def api_cron_weekly_newsletter():
+    """Weekly (Monday 8am UTC, see vercel.json) newsletter draft generation. This does
+    NOT publish anything — LinkedIn has no API for Newsletter editions, so this only
+    prepares a draft (research -> write -> header image -> source verification) and
+    commits it to the repo (via GitHub, since serverless functions don't share a
+    filesystem across invocations) so the /newsletter page can display it for you to
+    manually copy into LinkedIn and publish yourself.
+
+    Protected by CRON_SECRET the same way as /api/cron/daily-post."""
+    if config.CRON_SECRET:
+        auth = request.headers.get("Authorization", "")
+        if auth != f"Bearer {config.CRON_SECRET}":
+            return jsonify({"error": "Unauthorized."}), 401
+
+    try:
+        results = newsletter.research_ai_news()
+        draft = newsletter.generate_newsletter(results)
+        draft["image_b64"] = image_gen.generate_image_b64(draft["image_prompt"])
+        draft["generated_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+
+        github_store.write_json(
+            "data/newsletter_latest.json",
+            draft,
+            message=f"Weekly newsletter draft: {draft.get('title', 'untitled')}",
+        )
+    except Exception as e:
+        print({"newsletter_error": str(e)})
+        return jsonify({"error": str(e)}), 500
+
+    print({"newsletter_generated": draft.get("title")})
+    return jsonify({"status": "ok", "title": draft.get("title")})
 
 
 @app.route("/api/jobs/search", methods=["POST"])

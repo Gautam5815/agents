@@ -42,6 +42,13 @@ DRY_RUN = os.getenv("DRY_RUN", "false").strip().lower() in ("1", "true", "yes")
 # caller triggering an unwanted autonomous post.
 CRON_SECRET = os.getenv("CRON_SECRET")
 
+# Used to persist the weekly newsletter draft between the cron job (which generates it)
+# and the /newsletter page (which displays it) — see agent/github_store.py. Needs a
+# GitHub token with write access to GITHUB_REPO's contents.
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GITHUB_REPO = os.getenv("GITHUB_REPO", "Gautam5815/agents")
+GITHUB_BRANCH = os.getenv("GITHUB_BRANCH", "main")
+
 
 def require(*names: str) -> None:
     missing = [n for n in names if not globals().get(n)]
