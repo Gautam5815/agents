@@ -127,6 +127,105 @@ Note: the pipeline (web search + GPT + image generation) can take 20-60+ seconds
 supports function durations beyond the default 10s (Pro, or Hobby with Fluid Compute) —
 check your plan's limits if you see request timeouts.
 
+## Daily automated post (fully autonomous, no review step)
+
+`/api/cron/daily-post` runs the entire pipeline unattended once a day: it picks a topic
+deterministically from [prompts/daily_topics.md](prompts/daily_topics.md) (based on the
+day of the year — no repeats until the list cycles through), researches it, drafts the
+post, generates the image, and **publishes straight to LinkedIn with no human review
+step**.
+
+This is a deliberate exception to this app's normal confirm-before-publish behavior
+(the `/` and `/jobs` pages both require an explicit click before anything goes out) — it
+trades that safety checkpoint for full automation. Understand what you're accepting:
+- A bad draft (factual error, off-brand tone, hallucinated detail) goes live with nobody
+  checking it first.
+- The only after-the-fact visibility is Vercel's function logs (`vercel logs <url>`),
+  which print the topic, draft, and publish result for every run.
+- `DRY_RUN=true` makes this endpoint run the full pipeline and log the result without
+  publishing — test with this for at least a few days before trusting it live.
+
+**Setup:**
+1. Edit [prompts/daily_topics.md](prompts/daily_topics.md) — one topic per line, add or
+   remove as you like.
+2. In Vercel project settings, add an env var `CRON_SECRET` (any random string). Vercel
+   automatically sends it as `Authorization: Bearer <value>` on its own requests to this
+   endpoint, so anyone else calling the URL directly gets rejected with 401.
+3. The schedule lives in [vercel.json](vercel.json)'s `crons` field (default: `0 8 * * *`,
+   i.e. 8am UTC daily). Vercel's Hobby plan supports daily-or-less-frequent cron jobs.
+4. Deploy. Vercel picks up the cron schedule automatically from `vercel.json`.
+
+To test manually without waiting for the schedule:
+```
+curl -X POST https://<your-deployment>/api/cron/daily-post -H "Authorization: Bearer <CRON_SECRET>"
+```
+
+## Job search + application drafting agent
+
+`job_main.py` is a separate tool: it searches job listings via the [Jooble API](https://jooble.org/api/about)
+(legitimate public API — this does not scrape LinkedIn or Naukri Gulf, since both
+explicitly prohibit automated scraping in their terms of service), then for each job you
+select it:
+1. Finds the company's likely official domain using the same SerpApi research step the
+   LinkedIn agent uses.
+2. Suggests generic contact emails (`careers@`, `hr@`, `jobs@`, `recruitment@`) for that
+   domain, and, if you've configured `HUNTER_API_KEY`, looks up named contacts via
+   [Hunter.io](https://hunter.io) (a legitimate business-email-finder service).
+3. Drafts a tailored application email with GPT, grounded strictly in your real
+   background — it will not invent experience.
+
+**It never sends anything.** Every draft is printed and saved to
+`output/job_drafts/<timestamp>_<company>.json` for you to review, personalize, and send
+yourself.
+
+### Setup
+
+1. Fill in [jobsearch/profile.md](jobsearch/profile.md) with your real background (role,
+   years of experience, skills, certifications, achievements) — the email drafts are
+   generated only from what's in this file.
+2. Get a free Jooble API key at https://jooble.org/api/about and set `JOOBLE_API_KEY` in
+   `.env`.
+3. (Optional) Get a Hunter.io API key and set `HUNTER_API_KEY` in `.env` for named-contact
+   lookups; without it, you'll get generic email guesses only.
+
+### Run it
+
+```
+python job_main.py --keywords "IT Project Manager" --location "Dubai, United Arab Emirates" --limit 10
+```
+
+(Jooble needs a specific location string — plain `"Dubai"` alone returns no results for
+some queries; `"Dubai, United Arab Emirates"` or `"UAE"` works.)
+
+It lists the jobs found, lets you pick which ones to draft for (by number, comma-separated,
+or `all`), then prints and saves a draft for each.
+
+### LinkedIn / Naukri Gulf coverage via your own email alerts
+
+Neither platform has a public API, and scraping their pages would violate their terms of
+service — this tool doesn't do that. Instead, it can read job-alert emails that **you**
+subscribed to, from **your own inbox**, which is a normal intended feature of both sites:
+
+1. On LinkedIn, search for your target role/location, then turn on "Job alert" for that
+   search (top of the search results page).
+2. On Naukri Gulf, do the same — search, then enable email alerts for that saved search.
+3. Set up an app password for your email account:
+   - **Gmail**: Google Account → Security → 2-Step Verification → App passwords → generate
+     one for "Mail". Use this (not your normal password) as `IMAP_APP_PASSWORD`.
+   - **Outlook**: similar — generate an app password if MFA is enabled.
+4. Add to `.env`: `IMAP_EMAIL`, `IMAP_APP_PASSWORD`, and `IMAP_HOST` (defaults to
+   `imap.gmail.com`).
+5. Run with `--include-email-alerts`:
+   ```
+   python job_main.py --include-email-alerts
+   ```
+   or click "Check LinkedIn/Naukri Gulf email alerts" on the `/jobs` web page.
+
+This parses the HTML of alert emails using loose heuristics (any job-listing link found in
+the email, using its link text as the title). Email templates are undocumented and can
+change — if parsing stops finding jobs, the fix is to inspect a real alert email's HTML
+source and adjust `jobsearch/email_alerts.py`'s extraction patterns.
+
 ## Brand voice / writer prompt
 
 The system prompt that defines tone, audience, and formatting rules for the generated

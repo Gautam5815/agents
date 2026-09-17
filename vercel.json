@@ -4,5 +4,8 @@
       "maxDuration": 60,
       "includeFiles": "{templates,prompts}/**"
     }
-  }
+  },
+  "crons": [
+    { "path": "/api/cron/daily-post", "schedule": "0 8 * * *" }
+  ]
 }

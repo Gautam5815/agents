@@ -2,7 +2,8 @@ import base64
 
 from flask import Flask, jsonify, render_template, request
 
-from agent import config, content, image_gen, linkedin_client, research
+from agent import config, content, daily_topic, image_gen, linkedin_client, research
+from jobsearch import contact_finder, email_alerts, email_writer, jooble_client
 
 app = Flask(__name__)
 
@@ -10,6 +11,11 @@ app = Flask(__name__)
 @app.route("/")
 def index():
     return render_template("index.html", dry_run=config.DRY_RUN)
+
+
+@app.route("/jobs")
+def jobs_page():
+    return render_template("jobs.html")
 
 
 @app.route("/api/generate", methods=["POST"])
@@ -57,6 +63,119 @@ def api_publish():
         return jsonify({"error": str(e)}), 500
 
     return jsonify({"result": result})
+
+
+@app.route("/api/cron/daily-post", methods=["GET", "POST"])
+def api_cron_daily_post():
+    """Fully autonomous daily post: picks a topic deterministically (no human input),
+    researches, drafts, generates an image, and publishes straight to LinkedIn with no
+    review step. Triggered by Vercel Cron (see vercel.json). This is an explicit,
+    confirmed exception to this app's normal confirm-before-publish behavior — see
+    README.md "Daily automated post" for the tradeoffs.
+
+    Protected by CRON_SECRET: Vercel automatically sends
+    "Authorization: Bearer <CRON_SECRET>" on requests it makes to this endpoint when
+    CRON_SECRET is set as a project env var, so any other caller is rejected."""
+    if config.CRON_SECRET:
+        auth = request.headers.get("Authorization", "")
+        if auth != f"Bearer {config.CRON_SECRET}":
+            return jsonify({"error": "Unauthorized."}), 401
+
+    topic = daily_topic.pick_daily_topic()
+    log = {"topic": topic, "dry_run": config.DRY_RUN}
+
+    try:
+        results = research.search_topic(topic)
+        research_text = research.format_research_for_prompt(results)
+        log["research_count"] = len(results)
+
+        generated = content.generate_post_and_image_prompt(topic, research_text)
+        post_text = generated["post"]
+        image_prompt = generated["image_prompt"]
+        log["post"] = post_text
+        log["image_prompt"] = image_prompt
+
+        image_b64 = image_gen.generate_image_b64(image_prompt)
+    except Exception as e:
+        log["error"] = f"Generation failed: {e}"
+        print(log)
+        return jsonify(log), 500
+
+    if config.DRY_RUN:
+        log["published"] = False
+        log["note"] = "DRY_RUN is enabled — skipped publish."
+        print(log)
+        return jsonify(log)
+
+    try:
+        image_bytes = base64.b64decode(image_b64)
+        result = linkedin_client.post_with_image_bytes(post_text, image_bytes)
+        log["published"] = True
+        log["linkedin_result"] = result
+    except Exception as e:
+        log["published"] = False
+        log["error"] = f"Publish failed: {e}"
+        print(log)
+        return jsonify(log), 500
+
+    print(log)
+    return jsonify(log)
+
+
+@app.route("/api/jobs/search", methods=["POST"])
+def api_jobs_search():
+    body = request.json or {}
+    keywords = (body.get("keywords") or "").strip()
+    location = (body.get("location") or "").strip()
+    limit = int(body.get("limit") or 10)
+
+    if not keywords or not location:
+        return jsonify({"error": "Both 'keywords' and 'location' are required."}), 400
+
+    try:
+        jobs = jooble_client.search_jobs(keywords, location)[:limit]
+    except config.MissingConfigError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"jobs": jobs})
+
+
+@app.route("/api/jobs/email-alerts", methods=["POST"])
+def api_jobs_email_alerts():
+    """Reads LinkedIn/Naukri Gulf job-alert emails from the user's own inbox via IMAP —
+    not scraping, these are emails the user subscribed to via a saved-search alert."""
+    try:
+        jobs = email_alerts.fetch_all_alert_jobs()
+    except config.MissingConfigError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"jobs": jobs})
+
+
+@app.route("/api/jobs/draft", methods=["POST"])
+def api_jobs_draft():
+    body = request.json or {}
+    job = body.get("job")
+    profile = (body.get("profile") or "").strip()
+
+    if not job or not job.get("company"):
+        return jsonify({"error": "A job with at least a 'company' is required."}), 400
+    if not profile:
+        return jsonify({"error": "Your background/profile is required to draft an honest email."}), 400
+
+    try:
+        contacts = contact_finder.find_contacts(job["company"])
+        draft = email_writer.draft_application_email(job, profile=profile)
+    except config.MissingConfigError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"contacts": contacts, "draft": draft})
 
 
 if __name__ == "__main__":

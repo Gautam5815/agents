@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Job Search Agent</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --border: #e1e4e8;
+    --text: #1c1e21;
+    --muted: #65676b;
+    --accent: #0a66c2;
+    --accent-hover: #084d92;
+    --danger: #d93025;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header { background: var(--accent); color: white; padding: 20px 32px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; opacity: 0.9; font-size: 13px; }
+  header a { color: white; }
+  main { max-width: 820px; margin: 32px auto; padding: 0 16px 64px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .banner {
+    background: #e8f0fe;
+    border: 1px solid #aecbfa;
+    color: #174ea6;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+  label { font-weight: 600; font-size: 14px; display: block; margin-bottom: 6px; }
+  input[type=text], input[type=number], textarea {
+    width: 100%;
+    font-size: 14px;
+    font-family: inherit;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    resize: vertical;
+    margin-bottom: 14px;
+  }
+  textarea { min-height: 140px; line-height: 1.5; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  button {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 20px;
+    border: none;
+    cursor: pointer;
+  }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled { background: #9ec4e6; cursor: not-allowed; }
+  .btn-secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .status { font-size: 13px; margin-top: 10px; }
+  .status.error { color: var(--danger); }
+  .status.success { color: #1a7f37; }
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid #ccc;
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .job-item {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+  .job-item h3 { margin: 0 0 4px; font-size: 15px; }
+  .job-item .meta { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+  .job-item .snippet { font-size: 13px; margin-bottom: 10px; }
+  .draft-box {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border);
+    display: none;
+  }
+  .draft-box pre {
+    white-space: pre-wrap;
+    font-family: inherit;
+    background: #f9fafb;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 13px;
+  }
+  #results { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Job Search Agent</h1>
+  <p>Search real job listings (via Jooble) and draft (never auto-send) a tailored application email for each.</p>
+  <p style="margin-top:10px;"><a href="/">&larr; LinkedIn posting agent</a></p>
+</header>
+<main>
+  <div class="banner">
+    This does not scrape LinkedIn or Naukri Gulf (both prohibit that in their terms) —
+    it uses the public Jooble job search API. Emails are drafted only, never sent
+    automatically.
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label for="keywords">Job title / keywords</label>
+        <input type="text" id="keywords" value="IT Project Manager">
+      </div>
+      <div>
+        <label for="location">Location</label>
+        <input type="text" id="location" value="Dubai, United Arab Emirates">
+      </div>
+      <div style="flex: 0 0 100px;">
+        <label for="limit">Limit</label>
+        <input type="number" id="limit" value="10" min="1" max="30">
+      </div>
+    </div>
+
+    <label for="profile">Your background (used to draft honest, accurate application emails — only what you write here is used, nothing is invented)</label>
+    <textarea id="profile" placeholder="e.g. 3+ years as an IT Project Manager at Acme Corp. Skills: Agile/Scrum, JIRA, stakeholder management. PMP certified. Led a $500K ERP rollout that cut processing time by 30%. Contact: name, phone, email, LinkedIn URL."></textarea>
+
+    <button class="btn-primary" id="search-btn" onclick="searchJobs()">Search jobs (Jooble)</button>
+    <button class="btn-secondary" id="alerts-btn" onclick="checkEmailAlerts()">Check LinkedIn/Naukri Gulf email alerts</button>
+    <div id="search-status" class="status"></div>
+    <p class="muted" style="margin-top:10px;">
+      "Check email alerts" reads job-alert emails already in your own inbox (via IMAP) —
+      it doesn't scrape LinkedIn or Naukri Gulf. You must first set up a saved-search
+      alert on each site yourself and configure IMAP_EMAIL/IMAP_APP_PASSWORD in <code>.env</code>
+      (see README.md).
+    </p>
+  </div>
+
+  <div id="results"></div>
+</main>
+
+<script>
+let lastJobs = [];
+
+function setStatus(el, text, cls) {
+  el.textContent = text;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+async function searchJobs() {
+  const keywords = document.getElementById('keywords').value.trim();
+  const location = document.getElementById('location').value.trim();
+  const limit = parseInt(document.getElementById('limit').value, 10) || 10;
+
+  const btn = document.getElementById('search-btn');
+  const status = document.getElementById('search-status');
+  const results = document.getElementById('results');
+  btn.disabled = true;
+  status.innerHTML = '<span class="spinner"></span>Searching jobs…';
+  results.style.display = 'none';
+  results.innerHTML = '';
+
+  try {
+    const resp = await fetch('/api/jobs/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords, location, limit })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Search failed.');
+
+    lastJobs = data.jobs;
+    if (lastJobs.length === 0) {
+      setStatus(status, 'No jobs found for that search.', '');
+      return;
+    }
+    setStatus(status, `Found ${lastJobs.length} job(s).`, 'success');
+    renderJobs(lastJobs);
+  } catch (e) {
+    setStatus(status, e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function checkEmailAlerts() {
+  const btn = document.getElementById('alerts-btn');
+  const status = document.getElementById('search-status');
+  btn.disabled = true;
+  status.innerHTML = '<span class="spinner"></span>Reading LinkedIn/Naukri Gulf alert emails from your inbox…';
+
+  try {
+    const resp = await fetch('/api/jobs/email-alerts', { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Failed to read email alerts.');
+
+    if (data.jobs.length === 0) {
+      setStatus(status, 'No job-alert emails found in the last 7 days.', '');
+      return;
+    }
+    lastJobs = lastJobs.concat(data.jobs);
+    setStatus(status, `Added ${data.jobs.length} job(s) from email alerts.`, 'success');
+    renderJobs(lastJobs);
+  } catch (e) {
+    setStatus(status, e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderJobs(jobs) {
+  const results = document.getElementById('results');
+  results.style.display = 'block';
+  results.innerHTML = jobs.map((job, i) => `
+    <div class="card job-item" id="job-${i}">
+      <h3>${escapeHtml(job.title)}</h3>
+      <div class="meta">${escapeHtml(job.company)} — ${escapeHtml(job.location)}${job.source ? ' · ' + escapeHtml(job.source) : ''}</div>
+      <div class="snippet">${escapeHtml(job.snippet || '')}</div>
+      <a href="${job.link}" target="_blank" rel="noopener">View listing &rarr;</a>
+      <div style="margin-top:10px;">
+        <button class="btn-secondary" onclick="draftFor(${i})">Draft application email</button>
+      </div>
+      <div class="draft-box" id="draft-${i}">
+        <div class="status" id="draft-status-${i}"></div>
+        <div id="draft-content-${i}"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+async function draftFor(i) {
+  const job = lastJobs[i];
+  const profile = document.getElementById('profile').value.trim();
+  const box = document.getElementById(`draft-${i}`);
+  const status = document.getElementById(`draft-status-${i}`);
+  const content = document.getElementById(`draft-content-${i}`);
+
+  box.style.display = 'block';
+  content.innerHTML = '';
+
+  if (!profile) {
+    setStatus(status, 'Fill in your background above first — emails are drafted only from what you write there.', 'error');
+    return;
+  }
+
+  status.innerHTML = '<span class="spinner"></span>Finding contacts and drafting email…';
+
+  try {
+    const resp = await fetch('/api/jobs/draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job, profile })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Drafting failed.');
+
+    setStatus(status, 'Draft ready — review before sending.', 'success');
+
+    const c = data.contacts;
+    let contactsHtml = '';
+    if (c.domain) {
+      contactsHtml += `<p class="muted"><strong>Company domain:</strong> ${escapeHtml(c.domain)}</p>`;
+      contactsHtml += `<p class="muted"><strong>Generic email guesses:</strong> ${c.generic_emails.map(escapeHtml).join(', ')}</p>`;
+      if (c.named_contacts && c.named_contacts.length) {
+        contactsHtml += '<p class="muted"><strong>Named contacts (Hunter.io):</strong></p><ul>';
+        for (const nc of c.named_contacts) {
+          contactsHtml += `<li class="muted">${escapeHtml(nc.email)} (${escapeHtml(nc.position || 'unknown role')}, confidence ${nc.confidence})</li>`;
+        }
+        contactsHtml += '</ul>';
+      }
+    } else {
+      contactsHtml = '<p class="muted">Could not confidently identify the company domain — use the listing link to apply directly.</p>';
+    }
+
+    content.innerHTML = `
+      ${contactsHtml}
+      <label>Subject</label>
+      <input type="text" value="${escapeHtml(data.draft.subject)}" readonly>
+      <label>Body</label>
+      <pre>${escapeHtml(data.draft.body)}</pre>
+      <p class="muted">This was not sent. Copy, personalize if needed, and send it yourself.</p>
+    `;
+  } catch (e) {
+    setStatus(status, e.message, 'error');
+  }
+}
+</script>
+</body>
+</html>

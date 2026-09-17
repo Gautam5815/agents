@@ -85,9 +85,12 @@ def main() -> None:
     required = ["OPENAI_API_KEY", "SERPAPI_API_KEY"]
     if not config.DRY_RUN:
         required.append("LINKEDIN_ACCESS_TOKEN")
-    config.require(*required)
-
-    run(topic, skip_confirm=args.yes)
+    try:
+        config.require(*required)
+        run(topic, skip_confirm=args.yes)
+    except config.MissingConfigError as e:
+        print(e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
