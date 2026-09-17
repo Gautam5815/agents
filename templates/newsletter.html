@@ -60,7 +60,7 @@
     <h2 class="title">{{ draft.title }}</h2>
     <p class="intro">{{ draft.intro }}</p>
 
-    {% for item in draft.items %}
+    {% for item in draft['items'] %}
     <div class="item">
       <h3>{{ item.heading }}
         {% if item.source_verified %}
@@ -90,7 +90,7 @@ function copyDraft() {
   lines.push('');
   lines.push({{ draft.intro|tojson }});
   lines.push('');
-  const items = {{ draft.items|tojson }};
+  const items = {{ draft['items']|tojson }};
   for (const item of items) {
     lines.push(item.heading);
     lines.push(item.body);
