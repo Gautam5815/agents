@@ -6,7 +6,6 @@
     }
   },
   "crons": [
-    { "path": "/api/cron/daily-post", "schedule": "0 8 * * *" },
     { "path": "/api/cron/weekly-newsletter", "schedule": "0 8 * * 1" }
   ]
 }
